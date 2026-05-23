@@ -147,7 +147,15 @@ async def convert(req: ConvertRequest):
 
     conv_id = str(uuid.uuid4())
     try:
-        info = await asyncio.to_thread(_run_yt_dlp, url, conv_id)
+        if _is_direct_audio_url(url):
+            info = await asyncio.to_thread(_direct_download_and_convert, url, conv_id)
+        else:
+            try:
+                info = await asyncio.to_thread(_run_yt_dlp, url, conv_id)
+            except Exception as yt_err:
+                # Last-resort fallback: try to download as a generic file
+                logger.warning("yt-dlp failed (%s), trying direct download", yt_err)
+                info = await asyncio.to_thread(_direct_download_and_convert, url, conv_id)
     except Exception as e:
         logger.exception("Conversion failed for %s", url)
         # Clean up any partial files
