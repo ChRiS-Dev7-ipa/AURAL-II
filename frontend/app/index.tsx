@@ -330,7 +330,12 @@ export default function Index() {
         onRequestClose={closePlayer}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet} testID="player-modal">
+          <ScrollView
+            style={styles.modalSheet}
+            contentContainerStyle={styles.modalSheetContent}
+            showsVerticalScrollIndicator={false}
+            testID="player-modal"
+          >
             <View style={styles.modalHandle} />
             <View style={styles.modalTopRow}>
               <Text style={styles.modalLabel}>NOW PLAYING</Text>
@@ -438,7 +443,7 @@ export default function Index() {
                 </TouchableOpacity>
               </>
             ) : null}
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -609,6 +614,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     borderTopWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
+    maxHeight: "92%",
+  },
+  modalSheetContent: {
     paddingHorizontal: 24,
     paddingTop: 12,
     paddingBottom: 36,
