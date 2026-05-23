@@ -7,27 +7,26 @@ import os
 import logging
 import asyncio
 import re
-import shutil
 import subprocess
 import urllib.request
 import urllib.parse
+from contextlib import asynccontextmanager
 from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List, Optional, Tuple
+from pydantic import BaseModel
+from typing import List, Optional
 import uuid
-import mimetypes
 from datetime import datetime, timezone
 
 import yt_dlp
 import imageio_ffmpeg
 
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
 # Self-contained ffmpeg binary so the app works without a system install (and
 # survives container rebuilds where apt packages are wiped). yt-dlp is told to
 # use this same binary via the `ffmpeg_location` option.
 FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
-
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -45,7 +44,36 @@ STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 # logic; the fallback path streams arbitrary URLs and needs an explicit guard.
 MAX_DIRECT_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
-app = FastAPI()
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Startup: drop history rows whose MP3 files no longer exist on disk.
+    # Keeps the UI honest when the storage volume is wiped or replaced.
+    try:
+        missing = []
+        async for doc in db.conversions.find({}, {"_id": 0, "id": 1, "filename": 1}):
+            p = STORAGE_DIR / doc["filename"]
+            if not p.exists():
+                missing.append(doc["id"])
+        if missing:
+            await db.conversions.delete_many({"id": {"$in": missing}})
+            logger.info("Pruned %d dangling conversion(s) on startup.", len(missing))
+    except Exception as e:
+        logger.warning("Startup sync failed: %s", e)
+
+    yield
+
+    # Shutdown
+    client.close()
+
+
+app = FastAPI(lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 
@@ -173,6 +201,7 @@ def _run_yt_dlp(url: str, conv_id: str) -> dict:
     return info
 
 
+# ---------- Routes ----------
 @api_router.get("/")
 async def root():
     return {"message": "Audio URL → MP3 converter", "status": "ok"}
@@ -194,12 +223,10 @@ async def convert(req: ConvertRequest):
             try:
                 info = await asyncio.to_thread(_run_yt_dlp, url, conv_id)
             except Exception as yt_err:
-                # Last-resort fallback: try to download as a generic file
                 logger.warning("yt-dlp failed (%s), trying direct download", yt_err)
                 info = await asyncio.to_thread(_direct_download_and_convert, url, conv_id)
     except Exception as e:
         logger.exception("Conversion failed for %s", url)
-        # Clean up any partial files
         for p in STORAGE_DIR.glob(f"{conv_id}.*"):
             try:
                 p.unlink()
@@ -209,25 +236,19 @@ async def convert(req: ConvertRequest):
 
     mp3_path = STORAGE_DIR / f"{conv_id}.mp3"
     if not mp3_path.exists():
-        # Some sources land at different extensions if extraction fails
         candidates = list(STORAGE_DIR.glob(f"{conv_id}.*"))
         raise HTTPException(
             status_code=500,
             detail=f"MP3 not produced. Got: {[c.suffix for c in candidates]}",
         )
 
-    title = info.get("title") or "Untitled"
-    artist = info.get("uploader") or info.get("artist") or info.get("channel")
-    duration = info.get("duration")
-    thumbnail = info.get("thumbnail")
-
     record = Conversion(
         id=conv_id,
         url=url,
-        title=title,
-        artist=artist,
-        duration=float(duration) if duration is not None else None,
-        thumbnail=thumbnail,
+        title=info.get("title") or "Untitled",
+        artist=info.get("uploader") or info.get("artist") or info.get("channel"),
+        duration=float(info["duration"]) if info.get("duration") is not None else None,
+        thumbnail=info.get("thumbnail"),
         filename=f"{conv_id}.mp3",
         size_bytes=mp3_path.stat().st_size,
         created_at=datetime.now(timezone.utc).isoformat(),
@@ -274,7 +295,6 @@ async def get_file(conv_id: str):
     path = STORAGE_DIR / doc["filename"]
     if not path.exists():
         raise HTTPException(status_code=404, detail="File missing on disk")
-    # Build a friendly filename for the client
     safe_title = "".join(c for c in (doc.get("title") or "audio") if c.isalnum() or c in " -_").strip()[:80] or "audio"
     download_name = f"{safe_title}.mp3"
     return FileResponse(
@@ -294,31 +314,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-
-@app.on_event("startup")
-async def _sync_db_with_disk():
-    """Drop history rows whose MP3 files no longer exist on disk.
-    Keeps the UI honest when the storage volume is wiped or replaced."""
-    try:
-        missing = []
-        async for doc in db.conversions.find({}, {"_id": 0, "id": 1, "filename": 1}):
-            p = STORAGE_DIR / doc["filename"]
-            if not p.exists():
-                missing.append(doc["id"])
-        if missing:
-            await db.conversions.delete_many({"id": {"$in": missing}})
-            logger.info("Pruned %d dangling conversion(s) on startup.", len(missing))
-    except Exception as e:
-        logger.warning("Startup sync failed: %s", e)
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
