@@ -22,12 +22,14 @@ Mobile app that converts an audio URL (SoundCloud, YouTube, Bandcamp, Vimeo, dir
 `Conversion` model: `id, url, title, artist, duration, thumbnail, filename, size_bytes, created_at`. MP3s are stored under `/tmp/conversions`.
 
 ## Frontend
-Single screen (`/app/frontend/app/index.tsx`):
-- Headline **AUDIO TO MP3** with Signal Red (#FF3B30) accent
-- Bottom-docked URL input + clipboard paste shortcut + **CONVERT TO MP3** button (loading "CONVERTING…" state)
-- Recent conversions list (thumbnail, title, artist · duration · size, delete button)
-- **Player modal** (bottom sheet, scrollable, max 92% height): album art, title/meta, progress bar, play/pause + ±10s seek (`expo-audio` `useAudioPlayer`), and **SAVE TO FILES** button that triggers `expo-sharing` → iOS share sheet → Save to Files
-- Outfit (headings) + JetBrains Mono (metadata) fonts, dark Swiss/Brutalist aesthetic
+File-split structure under `/app/frontend`:
+- `app/index.tsx` (~370 lines) — orchestration: header, history list, bottom dock (URL input + paste + CONVERT button), wires up modals.
+- `src/components/HistoryRow.tsx` — list row (thumbnail, title, meta, delete X).
+- `src/components/PlayerModal.tsx` — bottom-sheet player (album art, progress, ±10s seek via `expo-audio`, SAVE TO FILES).
+- `src/components/ConfirmDelete.tsx` — Swiss-Brutalist DELETE TRACK card with CANCEL / DELETE.
+- `src/lib/converter.ts` — shared `Conversion` type, API base, formatters.
+
+The bottom **"SAVE TO FILES"** button calls `expo-sharing` → iOS share sheet → user taps **Save to Files** to drop the MP3 into the iPhone Files app. Outfit (headings) + JetBrains Mono (metadata) fonts, dark Swiss/Brutalist aesthetic.
 
 ## Tested
 8/8 backend pytest tests pass. Frontend end-to-end flow validated by testing agent (convert → preview → save → history → delete).
