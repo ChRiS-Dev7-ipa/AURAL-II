@@ -1,0 +1,88 @@
+{
+  "theme": "Dark",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "vibe": "Objective, rigid, functional, and tactical. A raw utility feel with high-end audio player aesthetics.",
+  "colors": {
+    "background": "#050505",
+    "surface": "#121212",
+    "surface_glass": "rgba(18, 18, 18, 0.7)",
+    "primary_accent": "#FF3B30",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A0A0A0",
+    "border": "rgba(255, 255, 255, 0.1)",
+    "error": "#FF3B30",
+    "success": "#32D74B"
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "JetBrains Mono",
+    "hierarchy": {
+      "h1": "text-4xl md:text-5xl font-black tracking-tighter uppercase",
+      "h2": "text-2xl md:text-3xl font-bold tracking-tight",
+      "h3": "text-xl font-medium",
+      "body": "text-base font-normal tracking-tight",
+      "metadata": "text-xs md:text-sm uppercase tracking-[0.2em] text-[#A0A0A0]"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Bottom-centric for thumb reachability. Generous spacing (p-6, p-8) to separate distinct functional areas. Use optical alignment.",
+    "patterns": {
+      "screen_padding": "px-6 py-12",
+      "bottom_dock": "absolute bottom-0 w-full p-6 pb-12 bg-black/90 backdrop-blur-xl border-t border-white/10",
+      "card": "p-4 flex flex-row items-center gap-4 bg-[#121212] border border-white/10"
+    }
+  },
+  "components": {
+    "url_input": {
+      "style": "h-16 bg-[#1A1A1A] border border-white/20 text-white px-4 font-mono text-base focus:border-[#FF3B30]",
+      "interaction": "Highlight border with Signal Red on focus. Keyboard pushes layout up."
+    },
+    "convert_button": {
+      "style": "h-16 bg-[#FF3B30] flex items-center justify-center text-white uppercase font-black tracking-wider text-lg",
+      "interaction": "Scale down slightly on press (active state). High contrast."
+    },
+    "history_list_item": {
+      "style": "flex flex-row items-center p-4 border-b border-white/5",
+      "thumbnail": "w-12 h-12 bg-[#1A1A1A]",
+      "title": "text-base font-bold text-white line-clamp-1",
+      "meta": "text-xs font-mono text-[#A0A0A0]"
+    },
+    "player_modal": {
+      "style": "absolute bottom-0 w-full h-[85vh] bg-[#0A0A0A] rounded-t-3xl border-t border-white/10 p-6 flex flex-col items-center",
+      "album_art": "w-64 h-64 md:w-80 md:h-80 bg-[#1A1A1A] mb-8 shadow-2xl shadow-black",
+      "save_button": "w-full h-16 bg-white text-black uppercase font-black tracking-wider text-lg mt-auto flex items-center justify-center"
+    }
+  },
+  "motion_and_interaction": {
+    "general": "Purposeful, snappy transitions. No sluggish animations.",
+    "modal_entry": "Slide up from bottom (spring physics).",
+    "button_press": "Opacity shift or slight scale down.",
+    "progress_state": "Linear loading bar using primary_accent (#FF3B30) moving rapidly."
+  },
+  "accessibility": {
+    "contrast": "Ensure pure white text on dark grey surfaces exceeds 7:1 ratio. Red button uses white text (exceeds 4.5:1).",
+    "touch_targets": "Minimum 48x48px for all interactive elements. Core actions (Convert, Save) are 64px (h-16).",
+    "test_ids": "All buttons and inputs MUST have data-testid attributes (e.g., data-testid='url-input', data-testid='convert-button')."
+  },
+  "media_urls": [
+    {
+      "category": "default_album_art",
+      "url": "https://images.unsplash.com/photo-1580656449278-e8381933522c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwxfHx2aW55bCUyMHJlY29yZCUyMGFic3RyYWN0fGVufDB8fHx8MTc3OTUyMTgwNnww&ixlib=rb-4.1.0&q=85",
+      "description": "Black vinyl record on orange surface, used as fallback for audio without artwork."
+    },
+    {
+      "category": "player_background_texture",
+      "url": "https://images.unsplash.com/photo-1617994452722-4145e196248b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHxzb3VuZCUyMHdhdmUlMjBncmFwaGljfGVufDB8fHx8MTc3OTUyMTgwN3ww&ixlib=rb-4.1.0&q=85",
+      "description": "Abstract blue sound wave used as a subtle background element in the player modal (opacity 10%)."
+    }
+  ],
+  "instructions_to_main_agent": [
+    "You are building a React Native Expo app. Translate the Tailwind-like utility classes in this JSON into React Native StyleSheet objects or use NativeWind.",
+    "Implement the UI with a Dark Theme (Swiss Brutalist style).",
+    "Ensure the URL Input and Convert Button are docked at the bottom of the screen to follow modern mobile audio player UI trends.",
+    "Use 'Outfit' for headings and 'JetBrains Mono' (or standard system Mono font) for metadata/durations.",
+    "For the audio player preview, use a bottom-sheet modal that slides up.",
+    "Never use generic placeholder images. Use the URLs provided in media_urls for fallback artwork.",
+    "Add 'data-testid' to all interactive elements."
+  ]
+}
