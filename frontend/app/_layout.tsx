@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
+import { useFonts } from "expo-font";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 
@@ -11,17 +12,22 @@ import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useIconFonts();
+  const [iconsLoaded, iconsError] = useIconFonts();
+  const [fontsLoaded] = useFonts({
+    Outfit_400Regular: require("@expo-google-fonts/outfit/400Regular/Outfit_400Regular.ttf"),
+    Outfit_700Bold: require("@expo-google-fonts/outfit/700Bold/Outfit_700Bold.ttf"),
+    Outfit_900Black: require("@expo-google-fonts/outfit/900Black/Outfit_900Black.ttf"),
+    JetBrainsMono_400Regular: require("@expo-google-fonts/jetbrains-mono/400Regular/JetBrainsMono_400Regular.ttf"),
+    JetBrainsMono_700Bold: require("@expo-google-fonts/jetbrains-mono/700Bold/JetBrainsMono_700Bold.ttf"),
+  });
 
   useEffect(() => {
-    if (loaded || error) {
+    if ((iconsLoaded || iconsError) && fontsLoaded) {
       SplashScreen.hideAsync();
     }
-  }, [loaded, error]);
+  }, [iconsLoaded, iconsError, fontsLoaded]);
 
-  // If the CDN is unreachable we fall through on error rather than wedging
-  // the app — icons will tofu, but the app still boots.
-  if (!loaded && !error) return null;
+  if ((!iconsLoaded && !iconsError) || !fontsLoaded) return null;
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#050505" } }} />;
 }
