@@ -6,7 +6,8 @@ Mobile app that converts an audio URL (SoundCloud, YouTube, Bandcamp, Vimeo, dir
 ## Stack
 - **Frontend:** Expo SDK 54 (React Native), expo-router file-based routes
 - **Backend:** FastAPI + Motor (MongoDB)
-- **Audio pipeline:** `yt-dlp` for source resolution + `ffmpeg` (libmp3lame, 192 kbps) for transcoding; urllib fallback for direct audio file URLs
+- **Audio pipeline:** `yt-dlp` for source resolution + bundled `ffmpeg` from `imageio-ffmpeg` (libmp3lame, 192 kbps) — no system ffmpeg dependency; urllib fallback for direct audio file URLs; 50 MB hard cap on downloads (yt-dlp `max_filesize` + Content-Length / bytes-written guard).
+- **Persistent storage:** MP3s live under `/app/backend/storage/conversions` (configurable via `CONVERSIONS_DIR` env). Startup hook prunes dangling history rows whose files were removed.
 
 ## Backend endpoints (all prefixed `/api`)
 | Method | Path | Description |
