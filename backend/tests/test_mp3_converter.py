@@ -56,9 +56,37 @@ class TestConvertFlow:
         for k in ("id", "title", "filename", "size_bytes", "created_at"):
             assert k in d, f"missing key {k} in {d}"
         assert d["filename"].endswith(".mp3")
+        assert d["filename"].startswith(d["id"])
         assert d["size_bytes"] > 1000
         # keys that may be None but must be present
         assert "artist" in d and "duration" in d and "thumbnail" in d
+        # Regression: title derived from filename (piano2)
+        assert "piano2" in (d["title"] or "").lower()
+        # Regression: duration probe now reads ffmpeg stderr — must be > 0
+        assert d["duration"] is not None and float(d["duration"]) > 0, (
+            f"duration not probed: {d['duration']}"
+        )
+
+
+# -------- Code-level regression: constants & storage --------
+class TestServerConstants:
+    def test_constants_and_storage(self):
+        import sys
+        sys.path.insert(0, "/app/backend")
+        import server  # noqa: E402
+        # 50 MB cap
+        assert server.MAX_DIRECT_DOWNLOAD_BYTES == 50 * 1024 * 1024
+        # Storage dir is persistent
+        assert str(server.STORAGE_DIR) == "/app/backend/storage/conversions"
+        assert server.STORAGE_DIR.exists()
+        # ffmpeg binary resolved
+        assert server.FFMPEG_BIN and os.path.exists(server.FFMPEG_BIN)
+
+    def test_file_lands_in_storage_dir(self, conversion):
+        from pathlib import Path
+        p = Path("/app/backend/storage/conversions") / conversion["filename"]
+        assert p.exists(), f"MP3 not in persistent STORAGE_DIR: {p}"
+        assert p.stat().st_size == conversion["size_bytes"]
 
     def test_list_excludes_object_id(self, api, conversion):
         r = api.get(f"{BASE_URL}/api/conversions", timeout=30)

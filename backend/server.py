@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import asyncio
+import re
 import shutil
 import subprocess
 import urllib.request
@@ -18,6 +19,12 @@ import mimetypes
 from datetime import datetime, timezone
 
 import yt_dlp
+import imageio_ffmpeg
+
+# Self-contained ffmpeg binary so the app works without a system install (and
+# survives container rebuilds where apt packages are wiped). yt-dlp is told to
+# use this same binary via the `ffmpeg_location` option.
+FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -27,9 +34,16 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Storage directory for converted MP3s
-STORAGE_DIR = Path("/tmp/conversions")
+# Storage directory for converted MP3s — configurable via env so deployments
+# can mount a persistent volume. Defaults to a path under the app dir so files
+# survive backend reloads (and survive container restarts when a volume is
+# mounted there).
+STORAGE_DIR = Path(os.environ.get("CONVERSIONS_DIR", "/app/backend/storage/conversions"))
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Hard cap for the direct-download fallback path. yt-dlp is bounded by its own
+# logic; the fallback path streams arbitrary URLs and needs an explicit guard.
+MAX_DIRECT_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -60,7 +74,8 @@ def _is_direct_audio_url(url: str) -> bool:
 
 
 def _direct_download_and_convert(url: str, conv_id: str) -> dict:
-    """Fallback path: download a plain audio file then transcode to mp3."""
+    """Fallback path: download a plain audio file then transcode to mp3.
+    Enforces a hard 50 MB cap on the source download."""
     parsed = urllib.parse.urlparse(url)
     base = os.path.basename(parsed.path) or "audio"
     title, _ = os.path.splitext(base)
@@ -68,12 +83,40 @@ def _direct_download_and_convert(url: str, conv_id: str) -> dict:
 
     src = STORAGE_DIR / f"{conv_id}.src"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=60) as resp, open(src, "wb") as out:
-        shutil.copyfileobj(resp, out)
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        # Reject up-front if the server tells us the file is too big.
+        try:
+            declared = int(resp.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            declared = 0
+        if declared and declared > MAX_DIRECT_DOWNLOAD_BYTES:
+            raise RuntimeError(
+                f"File too large ({declared / 1024 / 1024:.1f} MB). "
+                f"Max allowed is {MAX_DIRECT_DOWNLOAD_BYTES // (1024 * 1024)} MB."
+            )
+
+        written = 0
+        chunk = 64 * 1024
+        with open(src, "wb") as out:
+            while True:
+                buf = resp.read(chunk)
+                if not buf:
+                    break
+                written += len(buf)
+                if written > MAX_DIRECT_DOWNLOAD_BYTES:
+                    out.close()
+                    try:
+                        src.unlink()
+                    except Exception:
+                        pass
+                    raise RuntimeError(
+                        f"File exceeded {MAX_DIRECT_DOWNLOAD_BYTES // (1024 * 1024)} MB cap."
+                    )
+                out.write(buf)
 
     dst = STORAGE_DIR / f"{conv_id}.mp3"
     cmd = [
-        "ffmpeg", "-y", "-i", str(src),
+        FFMPEG_BIN, "-y", "-i", str(src),
         "-vn", "-acodec", "libmp3lame", "-b:a", "192k",
         str(dst),
     ]
@@ -85,18 +128,14 @@ def _direct_download_and_convert(url: str, conv_id: str) -> dict:
     if proc.returncode != 0 or not dst.exists():
         raise RuntimeError(f"ffmpeg failed: {proc.stderr[:300]}")
 
-    # Probe duration
+    # Probe duration from ffmpeg's own stderr (avoids ffprobe dependency).
     duration = None
-    try:
-        probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=noprint_wrappers=1:nokey=1", str(dst)],
-            capture_output=True, text=True,
-        )
-        if probe.returncode == 0:
-            duration = float(probe.stdout.strip() or 0) or None
-    except Exception:
-        pass
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", proc.stderr or "")
+    if m:
+        try:
+            duration = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+        except Exception:
+            duration = None
 
     return {
         "title": title,
@@ -115,6 +154,8 @@ def _run_yt_dlp(url: str, conv_id: str) -> dict:
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
+        "max_filesize": MAX_DIRECT_DOWNLOAD_BYTES,
+        "ffmpeg_location": FFMPEG_BIN,
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -259,6 +300,23 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+@app.on_event("startup")
+async def _sync_db_with_disk():
+    """Drop history rows whose MP3 files no longer exist on disk.
+    Keeps the UI honest when the storage volume is wiped or replaced."""
+    try:
+        missing = []
+        async for doc in db.conversions.find({}, {"_id": 0, "id": 1, "filename": 1}):
+            p = STORAGE_DIR / doc["filename"]
+            if not p.exists():
+                missing.append(doc["id"])
+        if missing:
+            await db.conversions.delete_many({"id": {"$in": missing}})
+            logger.info("Pruned %d dangling conversion(s) on startup.", len(missing))
+    except Exception as e:
+        logger.warning("Startup sync failed: %s", e)
 
 
 @app.on_event("shutdown")

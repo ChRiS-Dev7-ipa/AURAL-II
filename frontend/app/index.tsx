@@ -61,6 +61,7 @@ export default function Index() {
   const [history, setHistory] = useState<Conversion[]>([]);
   const [selected, setSelected] = useState<Conversion | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Conversion | null>(null);
 
   const audioUri = useMemo(
     () => (selected ? `${API}/api/file/${selected.id}` : null),
@@ -227,45 +228,37 @@ export default function Index() {
                     key={item.id}
                     entering={FadeInDown.delay(idx * 40).duration(280)}
                   >
-                    <Pressable
-                      onPress={() => setSelected(item)}
-                      style={({ pressed }) => [
-                        styles.row,
-                        pressed && { opacity: 0.7 },
-                      ]}
-                      testID={`history-item-${idx}`}
-                    >
-                      <Image
-                        source={{ uri: item.thumbnail || FALLBACK_ART }}
-                        style={styles.thumb}
-                      />
-                      <View style={{ flex: 1, marginLeft: 14 }}>
-                        <Text numberOfLines={1} style={styles.rowTitle}>
-                          {item.title}
-                        </Text>
-                        <Text numberOfLines={1} style={styles.rowMeta}>
-                          {(item.artist || "UNKNOWN").toUpperCase()} ·{" "}
-                          {formatDuration(item.duration)} ·{" "}
-                          {formatBytes(item.size_bytes)}
-                        </Text>
-                      </View>
+                    <View style={styles.row}>
                       <TouchableOpacity
-                        onPress={() =>
-                          Alert.alert("Delete", `Remove "${item.title}"?`, [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Delete",
-                              style: "destructive",
-                              onPress: () => handleDelete(item.id),
-                            },
-                          ])
-                        }
-                        hitSlop={10}
+                        onPress={() => setSelected(item)}
+                        activeOpacity={0.7}
+                        style={styles.rowMain}
+                        testID={`history-item-${idx}`}
+                      >
+                        <Image
+                          source={{ uri: item.thumbnail || FALLBACK_ART }}
+                          style={styles.thumb}
+                        />
+                        <View style={{ flex: 1, marginLeft: 14 }}>
+                          <Text numberOfLines={1} style={styles.rowTitle}>
+                            {item.title}
+                          </Text>
+                          <Text numberOfLines={1} style={styles.rowMeta}>
+                            {(item.artist || "UNKNOWN").toUpperCase()} ·{" "}
+                            {formatDuration(item.duration)} ·{" "}
+                            {formatBytes(item.size_bytes)}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setPendingDelete(item)}
+                        hitSlop={12}
+                        style={styles.rowDelete}
                         testID={`delete-item-${idx}`}
                       >
                         <Ionicons name="close" size={20} color="#A0A0A0" />
                       </TouchableOpacity>
-                    </Pressable>
+                    </View>
                   </Animated.View>
                 ))
               )}
@@ -446,6 +439,48 @@ export default function Index() {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Delete confirmation modal */}
+      <Modal
+        visible={!!pendingDelete}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setPendingDelete(null)}
+      >
+        <Pressable
+          style={styles.confirmBackdrop}
+          onPress={() => setPendingDelete(null)}
+        >
+          <Pressable style={styles.confirmCard} testID="confirm-delete-modal">
+            <Text style={styles.confirmLabel}>DELETE TRACK</Text>
+            <Text style={styles.confirmTitle} numberOfLines={2}>
+              {pendingDelete?.title}
+            </Text>
+            <Text style={styles.confirmBody}>
+              This will permanently remove the MP3 and its history entry.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.confirmCancelBtn}
+                onPress={() => setPendingDelete(null)}
+                testID="confirm-cancel"
+              >
+                <Text style={styles.confirmCancelLabel}>CANCEL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmDeleteBtn}
+                onPress={() => {
+                  if (pendingDelete) handleDelete(pendingDelete.id);
+                  setPendingDelete(null);
+                }}
+                testID="confirm-delete"
+              >
+                <Text style={styles.confirmDeleteLabel}>DELETE</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -531,6 +566,18 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  rowMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  rowDelete: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
   },
   thumb: {
     width: 52,
@@ -718,6 +765,79 @@ const styles = StyleSheet.create({
     color: "#050505",
     fontFamily: "Outfit_900Black",
     fontSize: 16,
+    letterSpacing: 2,
+  },
+  confirmBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    zIndex: 1000,
+  },
+  confirmCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#121212",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    padding: 24,
+  },
+  confirmLabel: {
+    color: "#FF3B30",
+    fontFamily: "JetBrainsMono_700Bold",
+    fontSize: 10,
+    letterSpacing: 3,
+  },
+  confirmTitle: {
+    color: "#fff",
+    fontFamily: "Outfit_900Black",
+    fontSize: 22,
+    letterSpacing: -0.5,
+    marginTop: 8,
+    textTransform: "uppercase",
+  },
+  confirmBody: {
+    color: "#A0A0A0",
+    fontFamily: "JetBrainsMono_400Regular",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 12,
+  },
+  confirmActions: {
+    flexDirection: "row",
+    marginTop: 24,
+    gap: 12,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    height: 52,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmCancelLabel: {
+    color: "#fff",
+    fontFamily: "Outfit_700Bold",
+    fontSize: 14,
+    letterSpacing: 2,
+  },
+  confirmDeleteBtn: {
+    flex: 1,
+    height: 52,
+    backgroundColor: "#FF3B30",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmDeleteLabel: {
+    color: "#fff",
+    fontFamily: "Outfit_900Black",
+    fontSize: 14,
     letterSpacing: 2,
   },
 });
